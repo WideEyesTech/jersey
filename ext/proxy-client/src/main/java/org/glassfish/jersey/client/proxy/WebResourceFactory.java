@@ -31,6 +31,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Future;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.CookieParam;
@@ -321,14 +323,29 @@ public final class WebResourceFactory implements InvocationHandler {
             }
         }
 
-        final GenericType responseGenericType = new GenericType(method.getGenericReturnType());
-        if (entity != null) {
+        GenericType responseGenericType = new GenericType(method.getGenericReturnType());
+        boolean isAsync = false, isRx = false;
+        if(method.getGenericReturnType() instanceof ParameterizedType) {
+            final ParameterizedType genericReturnType = (ParameterizedType) method.getGenericReturnType();
+            responseGenericType = new GenericType(genericReturnType.getActualTypeArguments()[0]);
+            isAsync = Future.class.isAssignableFrom((Class) genericReturnType.getRawType());
+            isRx = CompletionStage.class.isAssignableFrom((Class) genericReturnType.getRawType());
+        }
+
+
+        Entity finalEntity = null;
+        if(entity != null) {
             if (entityType instanceof ParameterizedType) {
                 entity = new GenericEntity(entity, entityType);
             }
-            result = builder.method(httpMethod, Entity.entity(entity, contentType), responseGenericType);
-        } else {
-            result = builder.method(httpMethod, responseGenericType);
+            finalEntity = Entity.entity(entity, contentType);
+        }
+        if(isAsync) {
+            result = builder.async().method(httpMethod, finalEntity, responseGenericType);
+        }else if(isRx) {
+            result = builder.rx().method(httpMethod, finalEntity, responseGenericType);
+        }else {
+            result = builder.method(httpMethod, finalEntity, responseGenericType);
         }
 
         return result;
